@@ -18,4 +18,10 @@ typedef struct {
 
 typedef struct {
     CELL** map;
+    int GEN_PROC_FOXES;
+    int GEN_FOOD_FOXES;
+    int GEN_PROC_RABBITS;
+    int generation;
+    int R;
+    int C;
 } BOARD;
