@@ -223,17 +223,13 @@ int get_cells(int limitX, int limitY, int x, int y, BOARD* board) {
     } else
         return next_move;
 }
-void move(BOARD* board, OBJECT* object, int x, int y) {
+
+void move(BOARD* board, BOARD* aux, OBJECT* object, int x, int y) {
     // ignore rocks
     if (strcmp(object->type, "ROCK") == 0) return;
 
     // get possible cells
     int move = get_cells(board->R, board->C, x, y, board);
-
-    // if (move == -1) {
-    //     printf("Cannot move\n");
-    //     return;
-    // }
 
     if (move != -1) {
         // switch position
@@ -242,6 +238,7 @@ void move(BOARD* board, OBJECT* object, int x, int y) {
 
         // printf("MOVE TO: %d\n", move);
         switch (move) {
+            // north
             case 1:
                 board->map[x - 1][y].object = aux;
                 board->map[x - 1][1].object->type = aux->type;
@@ -249,18 +246,24 @@ void move(BOARD* board, OBJECT* object, int x, int y) {
                 free(board->map[x][y].object);
 
                 break;
+
+            // east
             case 2:
                 board->map[x][y + 1].object = aux;
                 board->map[x][y + 1].object->type = aux->type;
                 board->map[x][y].object->type = ".";
                 free(board->map[x][y].object);
                 break;
+
+            // south
             case 3:
                 board->map[x + 1][y].object = aux;
                 board->map[x + 1][y].object->type = aux->type;
                 board->map[x][y].object->type = ".";
                 free(board->map[x][y].object);
                 break;
+
+            // west
             case 4:
                 board->map[x][y - 1].object = aux;
                 board->map[x][y - 1].object->type = aux->type;
@@ -286,34 +289,62 @@ void procriate(BOARD* board, int x, int y) {
             new_rabbit->type = "RABBIT";
 
             // move the old one and replace with the newer
-            move(board, board->map[x][y].object, x, y);
+            // move(board, aux, board->map[x][y].object, x, y);
             board->map[x][y].object = new_rabbit;
         }
     } else if (strcmp(board->map[x][y].object->type, "FOX") == 0) {
     }
 }
-
+void transfer_rocks(BOARD* board, BOARD* aux) {
+    for (int i = 0; i < board->R; i++) {
+        for (int j = 0; j < board->C; j++) {
+            if (strcmp(board->map[i][j].object->type, "ROCK") == 0) {
+                OBJECT* rock = malloc(sizeof(OBJECT));
+                rock->type = "ROCK";
+                aux->map[i][j].object = rock;
+            }
+        }
+    }
+}
 int main() {
     int GEN_PROC_RABBITS, GEN_PROC_FOXES, GEN_FOOD_FOXES, N_GEN, R, C, N;
     scanf("%d %d %d %d %d %d %d ", &GEN_PROC_RABBITS, &GEN_PROC_FOXES,
           &GEN_FOOD_FOXES, &N_GEN, &R, &C, &N);
 
+    /*
+        make the 2 boards
+    */
     BOARD* board = (BOARD*)malloc(sizeof(BOARD));
-    board->map = (CELL**)malloc(sizeof(CELL*) * R);
+    BOARD* aux = (BOARD*)malloc(sizeof(BOARD));
 
-    for (int i = 0; i < C; i++) {
+    board->map = (CELL**)malloc(sizeof(CELL*) * R);
+    aux->map = (CELL**)malloc(sizeof(CELL*) * R);
+
+    for (int i = 0; i < R; i++) {
         board->map[i] = (CELL*)malloc(sizeof(CELL) * C);
+        aux->map[i] = (CELL*)malloc(sizeof(CELL) * C);
     }
 
     initialize_board(board, R, C);
-    recieve_input(board, N, GEN_PROC_FOXES, GEN_FOOD_FOXES, GEN_PROC_FOXES);
+    initialize_board(aux, R, C);
 
+    recieve_input(board, N, GEN_PROC_FOXES, GEN_FOOD_FOXES, GEN_PROC_FOXES);
+    transfer_rocks(board, aux);
     // test move the rabbit
-    move(board, board->map[0][2].object, 0, 2);
+    move(board, aux, board->map[0][2].object, 0, 2);
 
     for (int i = 0; i < R; i++) {
         for (int j = 0; j < C; j++) {
             printf("%s ", board->map[i][j].object->type);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    printf("\n");
+
+    for (int i = 0; i < R; i++) {
+        for (int j = 0; j < C; j++) {
+            printf("%s ", aux->map[i][j].object->type);
         }
         printf("\n");
     }
