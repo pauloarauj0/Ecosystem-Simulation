@@ -7,21 +7,26 @@
 void print_board(BOARD* board) {
     for (int i = 0; i < board->R; i++) {
         for (int j = 0; j < board->C; j++) {
-            printf("%s ", board->map[i][j].object->type);
+            printf("%c ", board->map[i][j].object->type);
         }
         printf("\n");
     }
     printf("\n");
 }
-void initialize_board(BOARD* board, int R, int C) {
+void empty_board(BOARD* board) {
     OBJECT* object = malloc(sizeof(OBJECT));
-    board->C = C;
-    board->R = R;
 
-    for (int i = 0; i < R; i++) {
-        for (int j = 0; j < C; j++) {
+    for (int i = 0; i < board->R; i++) {
+        for (int j = 0; j < board->C; j++) {
             board->map[i][j].object = object;
-            board->map[i][j].object->type = ".";
+            board->map[i][j].object->type = '.';
+        }
+    }
+}
+void copy_board(BOARD* b1, BOARD* b2) {
+    for (int i = 0; i < b1->R; i++) {
+        for (int j = 0; j < b1->C; j++) {
+            b1->map[i][j].object = b2->map[i][j].object;
         }
     }
 }
@@ -33,258 +38,221 @@ void recieve_input(BOARD* board, int N, int GEN_PROC_RABBITS,
         int x, y;
         scanf("%s %d %d", type, &x, &y);
         OBJECT* object = malloc(sizeof(OBJECT));
-        object->type = type;
 
         if (strcmp(type, "RABBIT") == 0) {
+            object->type = 'R';
             board->map[x][y].object = object;
             board->GEN_PROC_RABBITS = GEN_PROC_RABBITS;
         } else if (strcmp(type, "FOX") == 0) {
+            object->type = 'F';
             board->map[x][y].object = object;
             board->GEN_FOOD_FOXES = GEN_FOOD_FOXES;
             board->GEN_PROC_FOXES = GEN_PROC_FOXES;
 
         } else if (strcmp(type, "ROCK") == 0) {
+            object->type = '*';
             board->map[x][y].object = object;
         }
     }
 }
-int check_north(BOARD* board, int x, int y) {
-    if (strcmp(board->map[x - 1][y].object->type, ".") == 0) {
-        return 1;
-    }
-    return 0;
-}
-int check_east(BOARD* board, int x, int y) {
-    if (strcmp(board->map[x][y + 1].object->type, ".") == 0) {
-        return 1;
-    }
-    return 0;
-}
 
-int check_south(BOARD* board, int x, int y) {
-    if (strcmp(board->map[x + 1][y].object->type, ".") == 0) {
+int check_empty(BOARD* board, int x, int y) {
+    if (board->map[x][y].object->type == '.') {
         return 1;
     }
     return 0;
 }
-int check_west(BOARD* board, int x, int y) {
-    if (strcmp(board->map[x][y - 1].object->type, ".") == 0) {
+int check_rabbit(BOARD* board, int x, int y) {
+    if (board->map[x][y].object->type == 'R') {
         return 1;
     }
     return 0;
 }
 /**
  * @brief Get the cell for the next move
- *  0 North
- *  1 East
- *  2 South
- *  3 West
- * @param limitX
- * @param limitY
+ *
+ * @param board
  * @param x
  * @param y
- * @return next cell to move
+ * @param f function to see if is empty(for rabbits) / there is a rabbit (for
+ * foxes)
+ * @return POS
  */
-int get_cells(int limitX, int limitY, int x, int y, BOARD* board) {
+POS get_cell(BOARD* board, int x, int y, int (*f)(BOARD*, int, int)) {
+    int count = 0;
+    POS p[4];
+
     // top left corner
     if (x == 0 && y == 0) {
-        int next_move = -1;
-        int count = 0;
-        int p[2] = {1, 2};
-        if (check_east(board, x, y) == 1) {
+        if ((*f)(board, x, y + 1) == 1) {
+            p[count].x = x;
+            p[count].y = y + 1;
             count++;
         }
-        if (check_south(board, x, y) == 1) {
+        if ((*f)(board, x + 1, y) == 1) {
+            p[count].x = x + 1;
+            p[count].y = y;
             count++;
         }
-        // if can move
-        if (count != 0) {
-            next_move = (board->generation + x + y) % count;
-            return p[next_move];
-        } else
-            return next_move;
     }
     // top row
-    if (x == 0 && y > 0 && y < limitY - 1) {
-        int next_move = -1;
-        int count = 0;
-        int p[3] = {1, 2, 3};
-
-        if (check_east(board, x, y) == 1) {
+    else if (x == 0 && y > 0 && y < board->C - 1) {
+        if ((*f)(board, x, y + 1) == 1) {
+            p[count].x = x;
+            p[count].y = y + 1;
             count++;
         }
-        if (check_south(board, x, y) == 1) {
+        if ((*f)(board, x + 1, y) == 1) {
+            p[count].x = x + 1;
+            p[count].y = y;
             count++;
         }
-        if (check_west(board, x, y) == 1) {
+        if ((*f)(board, x, y - 1) == 1) {
+            p[count].x = x;
+            p[count].y = y - 1;
             count++;
         }
-        // if can move
-        if (count != 0) {
-            next_move = (board->generation + x + y) % count;
-            return p[next_move];
-        } else
-            return next_move;
     }
     // top right corner
-    if (x == 0 && y == limitY - 1) {
-        int next_move = -1;
-        int count = 0;
-        int p[2] = {2, 3};
-
-        if (check_south(board, x, y) == 1) {
+    else if (x == 0 && y == board->C - 1) {
+        if ((*f)(board, x + 1, y) == 1) {
+            p[count].x = x + 1;
+            p[count].y = y;
             count++;
         }
-        if (check_west(board, x, y) == 1) {
+        if ((*f)(board, x, y - 1) == 1) {
+            p[count].x = x;
+            p[count].y = y - 1;
             count++;
         }
-        // if can move
-        if (count != 0) {
-            next_move = (board->generation + x + y) % count;
-            return p[next_move];
-        } else
-            return next_move;
     }
 
     // bottom left corner
-    if (x == limitX - 1 && y == 0) {
-        int next_move = -1;
-        int count = 0;
-        int p[2] = {0, 1};
-
-        if (check_north(board, x, y) == 1) {
+    else if (x == board->R - 1 && y == 0) {
+        if ((*f)(board, x - 1, y) == 1) {
+            p[count].x = x - 1;
+            p[count].y = y;
             count++;
         }
-        if (check_east(board, x, y) == 1) {
+        if ((*f)(board, x, y + 1) == 1) {
+            p[count].x = x;
+            p[count].y = y + 1;
             count++;
         }
-        // if can move
-        if (count != 0) {
-            next_move = (board->generation + x + y) % count;
-            return p[next_move];
-        } else
-            return next_move;
     }
 
     // bottom row
-    if (x == limitX - 1 && y > 0 && y < limitY - 1) {
-        int next_move = -1;
-        int count = 0;
-        int p[3] = {0, 1, 3};
-
-        if (check_north(board, x, y) == 1) {
+    else if (x == board->R - 1 && y > 0 && y < board->C - 1) {
+        if ((*f)(board, x - 1, y) == 1) {
+            p[count].x = x - 1;
+            p[count].y = y;
             count++;
         }
-        if (check_east(board, x, y) == 1) {
+        if ((*f)(board, x, y + 1) == 1) {
+            p[count].x = x;
+            p[count].y = y + 1;
             count++;
         }
-        if (check_west(board, x, y) == 1) {
+        if ((*f)(board, x, y - 1) == 1) {
+            p[count].x = x;
+            p[count].y = y - 1;
             count++;
         }
-        // if can move
-        if (count != 0) {
-            next_move = (board->generation + x + y) % count;
-            return p[next_move];
-        } else
-            return next_move;
     }
 
     // bottom right corner
-    if (x == limitX - 1 && y == limitY - 1) {
-        int next_move = -1;
-        int count = 0;
-        int p[2] = {0, 3};
-
-        if (check_north(board, x, y) == 1) {
+    else if (x == board->R - 1 && y == board->C - 1) {
+        if ((*f)(board, x - 1, y) == 1) {
+            p[count].x = x - 1;
+            p[count].y = y;
             count++;
         }
-        if (check_west(board, x, y) == 1) {
+        if ((*f)(board, x, y - 1) == 1) {
+            p[count].x = x;
+            p[count].y = y - 1;
             count++;
         }
-        // if can move
-        if (count != 0) {
-            next_move = (board->generation + x + y) % count;
-            return p[next_move];
-        } else
-            return next_move;
     }
     // left border
-    if (x > 0 && x <= limitX - 1 && y == 0) {
-        int next_move = -1;
-        int count = 0;
-        int p[3] = {0, 1, 2};
+    else if (x > 0 && x < board->R - 1 && y == 0) {
+        if ((*f)(board, x - 1, y) == 1) {
+            p[count].x = x - 1;
+            p[count].y = y;
+            count++;
+        }
+        if ((*f)(board, x, y + 1) == 1) {
+            p[count].x = x;
+            p[count].y = y + 1;
+            count++;
+        }
+        if ((*f)(board, x + 1, y) == 1) {
+            p[count].x = x + 1;
+            p[count].y = y;
+            count++;
+        }
 
-        if (check_north(board, x, y) == 1) {
-            count++;
-        }
-        if (check_south(board, x, y) == 1) {
-            count++;
-        }
-        if (check_east(board, x, y) == 1) {
-            count++;
-        }
-        // if can move
-        if (count != 0) {
-            next_move = (board->generation + x + y) % count;
-            return p[next_move];
-        } else
-            return next_move;
     }
 
     // right border
-    if (x == limitX - 1 && y > 0 && y < limitY - 1) {
-        int next_move = -1;
-        int count = 0;
-        int p[3] = {0, 1, 3};
-
-        if (check_north(board, x, y) == 1) {
+    else if (x > 0 && x < board->R - 1 && y == board->C - 1) {
+        if ((*f)(board, x - 1, y) == 1) {
+            p[count].x = x - 1;
+            p[count].y = y;
             count++;
         }
-        if (check_south(board, x, y) == 1) {
+        if ((*f)(board, x + 1, y) == 1) {
+            p[count].x = x + 1;
+            p[count].y = y;
             count++;
         }
-        if (check_west(board, x, y) == 1) {
+        if ((*f)(board, x, y - 1) == 1) {
+            p[count].x = x;
+            p[count].y = y - 1;
             count++;
         }
-        // if can move
-        if (count != 0) {
-            next_move = (board->generation + x + y) % count;
-            return p[next_move];
-        } else
-            return next_move;
     }
-
     // the rest
-    int next_move = -1;
-    int count = 0;
-    int p[4] = {1, 2, 3, 4};
+    else {
+        if ((*f)(board, x - 1, y) == 1) {
+            p[count].x = x - 1;
+            p[count].y = y;
+            count++;
+        }
+        if ((*f)(board, x, y + 1) == 1) {
+            p[count].x = x;
+            p[count].y = y + 1;
+            count++;
+        }
+        if ((*f)(board, x + 1, y) == 1) {
+            p[count].x = x + 1;
+            p[count].y = y;
+            count++;
+        }
+        if ((*f)(board, x, y - 1) == 1) {
+            p[count].x = x;
+            p[count].y = y - 1;
+            count++;
+        }
+    }
 
-    if (check_north(board, x, y) == 1) {
-        count++;
-    }
-    if (check_east(board, x, y) == 1) {
-        count++;
-    }
-    if (check_south(board, x, y) == 1) {
-        count++;
-    }
-    if (check_west(board, x, y) == 1) {
-        count++;
-    }
     // if can move
     if (count != 0) {
-        next_move = (board->generation + x + y) % count;
-        return p[next_move];
-    } else
-        return next_move;
+        return p[(board->generation + x + y) % count];
+    }
+
+    if (count == 0) {
+        POS er;
+        er.x = er.y = -1;
+        return er;
+    }
 }
 
 void resolve_conflit(BOARD* b, OBJECT* obj, int x, int y) {
-    if (strcmp(obj->type, "RABBIT") == 0) {
+    if (obj->type == 'R') {
         if (obj->GEN_PROC_RABBITS > b->map[x][y].object->GEN_PROC_RABBITS) {
             b->map[x][y].object = obj;
         }
-    } else if (strcmp(obj->type, "FOX") == 0) {
+    } else if (obj->type == 'F') {
         if (obj->GEN_PROC_FOXES >= b->map[x][y].object->GEN_PROC_FOXES) {
             // if the same compare the food
 
@@ -298,100 +266,106 @@ void resolve_conflit(BOARD* b, OBJECT* obj, int x, int y) {
         }
     }
 }
-void move(BOARD* board, BOARD* board_aux, OBJECT* object, int x, int y) {
-    // ignore rocks
-    if (strcmp(object->type, "ROCK") == 0) return;
-
-    // get possible cells
-    int move = get_cells(board->R, board->C, x, y, board);
-    if (move != -1) {
-        // switch position
-        // OBJECT* aux = malloc(sizeof(OBJECT));
-        // aux->type = board->map[x][y].object->type;
-
-        printf("MOVE TO: %d\n", move);
-        switch (move) {
-            // north
-            case 0:
-                if (strcmp(board_aux->map[x - 1][y].object->type, ".") != 0) {
-                    resolve_conflit(board_aux, object, x - 1, y);
-                } else {
-                    board_aux->map[x - 1][y].object = object;
-                }
-
-                break;
-
-            // east
-            case 1:
-                if (strcmp(board_aux->map[x][y + 1].object->type, ".") != 0) {
-                    resolve_conflit(board_aux, object, x, y + 1);
-                } else {
-                    board_aux->map[x][y + 1].object = object;
-                }
-                break;
-
-            // south
-            case 2:
-                if (strcmp(board_aux->map[x + 1][y].object->type, ".") != 0) {
-                    resolve_conflit(board_aux, object, x + 1, y);
-                } else {
-                    board_aux->map[x + 1][y].object = object;
-                }
-                break;
-
-            // west
-            case 3:
-                if (strcmp(board_aux->map[x][y - 1].object->type, ".") != 0) {
-                    resolve_conflit(board_aux, object, x, y - 1);
-                } else {
-                    board_aux->map[x][y - 1].object = object;
-                }
-                break;
-
-            default:
-                printf("Erro");
-                break;
-        }
-    }
-}
-void procriate(BOARD* board, BOARD* board_aux, int x, int y) {
-    if (strcmp(board->map[x][y].object->type, "RABBIT") == 0) {
-        if (board->map[x][y].object->GEN_PROC_RABBITS ==
-            board->GEN_PROC_RABBITS) {
+void procriate(BOARD* board, BOARD* board_aux, OBJECT* obj, int x, int y) {
+    if (obj->type == 'R') {
+        if (obj->GEN_PROC_RABBITS == board->GEN_PROC_RABBITS) {
             // reset the rabbit gen_proc
-            board->map[x][y].object->GEN_PROC_RABBITS = 0;
+            obj->GEN_PROC_RABBITS = 0;
 
             // create a new rabbit
             OBJECT* new_rabbit = malloc(sizeof(OBJECT));
-            new_rabbit->type = "RABBIT";
+            new_rabbit->type = 'R';
 
             // move the old one and replace with the newer
-            move(board, board_aux, board->map[x][y].object, x, y);
-            board->map[x][y].object = new_rabbit;
+            board_aux->map[x][y].object = new_rabbit;
         }
+    } else {
+        if (obj->GEN_PROC_FOXES == board->GEN_PROC_FOXES) {
+            // reset the rabbit gen_proc
+            obj->GEN_PROC_FOXES = 0;
 
-    } else if (strcmp(board->map[x][y].object->type, "FOX") == 0) {
+            // create a new rabbit
+            OBJECT* new_fox = malloc(sizeof(OBJECT));
+            new_fox->type = 'F';
+
+            // move the old one and replace with the newer
+            board_aux->map[x][y].object = new_fox;
+        }
     }
-    move(board, board_aux, board->map[x][y].object, x, y);
 }
-void transfer_rocks(BOARD* board, BOARD* aux) {
+void move_foxes(BOARD* board, BOARD* board_aux) {
     for (int i = 0; i < board->R; i++) {
         for (int j = 0; j < board->C; j++) {
-            if (strcmp(board->map[i][j].object->type, "ROCK") == 0) {
-                OBJECT* rock = malloc(sizeof(OBJECT));
-                rock->type = "ROCK";
-                aux->map[i][j].object = rock;
+            if (board->map[i][j].object->type == 'F') {
+                if (board->map[i][j].object->GEN_FOOD_FOXES ==
+                    board->GEN_FOOD_FOXES) {
+                    OBJECT* empty = malloc(sizeof(OBJECT));
+                    empty->type = '.';
+                    board_aux->map[i][j].object = empty;
+                } else {
+                    POS p = get_cell(board, i, j, check_rabbit);
+                    // printf("(%d,%d) go to (%d,%d)\n", i, j, p.x, p.y);
+
+                    //  didnt find any rabbit
+                    if (p.x == -1) {
+                        POS p2 = get_cell(board, i, j, check_empty);
+                        if (p2.x == -1) return;
+                        p.x = p2.x;
+                        p.y = p2.y;
+
+                        // ate a rabbit
+                    } else {
+                        board->map[i][j].object->GEN_FOOD_FOXES = 0;
+                    }
+
+                    if (board_aux->map[p.x][p.y].object->type == 'F') {
+                        resolve_conflit(board_aux,
+                                        board_aux->map[p.x][p.y].object, p.x,
+                                        p.y);
+                    } else {
+                        board_aux->map[p.x][p.y].object =
+                            board->map[i][j].object;
+                        OBJECT* empty = malloc(sizeof(OBJECT));
+                        empty->type = '.';
+                        board_aux->map[i][j].object = empty;
+                        procriate(board, board_aux, board->map[i][j].object, i,
+                                  j);
+                        board_aux->map[p.x][p.y].object->GEN_PROC_FOXES++;
+                        board_aux->map[p.x][p.y].object->GEN_FOOD_FOXES++;
+                    }
+                }
             }
         }
     }
 }
-void swap_board(BOARD* board, BOARD* aux) {
+
+void move_rabbits(BOARD* board, BOARD* board_aux) {
     for (int i = 0; i < board->R; i++) {
         for (int j = 0; j < board->C; j++) {
-            board->map[i][j] = aux->map[i][j];
+            if (board->map[i][j].object->type == 'R') {
+                POS p = get_cell(board, i, j, check_empty);
+
+                // error
+                if (p.x == -1) {
+                    return;
+                }
+                /* conflict */
+                if (board_aux->map[p.x][p.y].object->type == 'R') {
+                    resolve_conflit(board_aux, board_aux->map[p.x][p.y].object,
+                                    p.x, p.y);
+                } else {
+                    board_aux->map[p.x][p.y].object = board->map[i][j].object;
+                    OBJECT* empty = malloc(sizeof(OBJECT));
+                    empty->type = '.';
+                    board_aux->map[i][j].object = empty;
+                    procriate(board, board_aux, board->map[i][j].object, i, j);
+                    board_aux->map[p.x][p.y].object->GEN_PROC_RABBITS++;
+                }
+            }
         }
     }
 }
+
 int main() {
     int GEN_PROC_RABBITS, GEN_PROC_FOXES, GEN_FOOD_FOXES, N_GEN, R, C, N;
     scanf("%d %d %d %d %d %d %d ", &GEN_PROC_RABBITS, &GEN_PROC_FOXES,
@@ -410,34 +384,21 @@ int main() {
         board->map[i] = (CELL*)malloc(sizeof(CELL) * C);
         aux->map[i] = (CELL*)malloc(sizeof(CELL) * C);
     }
+    board->C = aux->C = C;
+    board->R = aux->R = R;
 
-    initialize_board(board, R, C);
-
+    empty_board(board);
     recieve_input(board, N, GEN_PROC_FOXES, GEN_FOOD_FOXES, GEN_PROC_FOXES);
-    // move(board, aux, board->map[3][0].object, 3, 0);
-    while (N_GEN >= 0) {
-        initialize_board(aux, R, C);
-        transfer_rocks(board, aux);
-        // criar
-        move_rabbits(board);
-        swap_board(board, aux);
-        // criar func pra isto
-        // clear_world()
-        initialize_board(aux, R, C);
-        transfer_rocks(board, aux);
 
-        // criar
-        transfer_rabbits(board, aux);
-        // criar
-        move_foxes(board);
-        swap_board(board, aux);
+    for (int i = 0; i < N_GEN; i++) {
+        copy_board(aux, board);
+        move_rabbits(board, aux);
+        move_foxes(board, aux);
+        copy_board(board, aux);
+        print_board(board);
 
         board->generation++;
-        N_GEN--;
     }
-
-    print_board(board);
-    print_board(aux);
 
     return 0;
 }
