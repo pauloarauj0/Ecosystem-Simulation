@@ -1,13 +1,14 @@
+
 typedef struct {
-    int x, y;
+    int x;
+    int y;
 } POS;
 
 typedef struct {
     int GEN_PROC_FOXES;
     int GEN_FOOD_FOXES;
     int GEN_PROC_RABBITS;
-    POS* pos;
-    char* type;
+    char type;
 
 } OBJECT;
 
