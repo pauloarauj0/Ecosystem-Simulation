@@ -1,446 +1,421 @@
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "structs.h"
 
-void print_board(BOARD* board) {
-    for (int i = 0; i < board->R; i++) {
-        for (int j = 0; j < board->C; j++) {
-            printf("%c ", board->map[i][j].object->type);
+/* global variables */
+int GEN_PROC_RABBITS, GEN_PROC_FOXES, GEN_FOOD_FOXES, N_GEN, R, C, N;
+int cur_gen;
+
+object** board;
+object** board_aux;
+/* ---------------- */
+
+/**
+ * @brief Innitialize the board
+ *
+ */
+void start_board() {
+    int x, y;
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            object empty;
+            empty.type = '.';
+            empty.GEN_FOOD_FOXES = 0;
+            empty.GEN_PROC_FOXES = 0;
+            empty.GEN_PROC_RABBITS = 0;
+            board[x][y] = empty;
+            board_aux[x][y] = empty;
+        }
+    }
+}
+/**
+ * @brief Debug
+ *
+ */
+void print_board() {
+    int x, y;
+
+    printf("\n");
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            printf("%c ", board[x][y].type);
         }
         printf("\n");
     }
     printf("\n");
 }
-void empty_board(BOARD* board) {
-    OBJECT* object = malloc(sizeof(OBJECT));
-
-    for (int i = 0; i < board->R; i++) {
-        for (int j = 0; j < board->C; j++) {
-            board->map[i][j].object = object;
-            board->map[i][j].object->type = '.';
-        }
-    }
-}
 /**
- * @brief Copies b2 to b1
+ * @brief Scan all the foxes/rabbits
  *
- * @param b1
- * @param b2
  */
-void copy_board(BOARD* b1, BOARD* b2) {
-    for (int i = 0; i < b1->R; i++) {
-        for (int j = 0; j < b1->C; j++) {
-            b1->map[i][j].object = b2->map[i][j].object;
-        }
-    }
-}
+void recieve_objects() {
+    char* type = malloc(sizeof(char));
+    int i, x, y;
 
-void recieve_input(BOARD* board, int N, int GEN_PROC_RABBITS,
-                   int GEN_FOOD_FOXES, int GEN_PROC_FOXES) {
-    for (int i = 0; i < N; i++) {
-        char* type = malloc(sizeof(char));
-        int x, y;
+    for (i = 0; i < N; i++) {
         scanf("%s %d %d", type, &x, &y);
-        OBJECT* object = malloc(sizeof(OBJECT));
-
+        object obj;
         if (strcmp(type, "RABBIT") == 0) {
-            object->type = 'R';
-            board->map[x][y].object = object;
-            board->GEN_PROC_RABBITS = GEN_PROC_RABBITS;
+            obj.type = 'R';
+            obj.GEN_PROC_RABBITS = 0;
         } else if (strcmp(type, "FOX") == 0) {
-            object->type = 'F';
-            board->map[x][y].object = object;
-            board->GEN_FOOD_FOXES = GEN_FOOD_FOXES;
-            board->GEN_PROC_FOXES = GEN_PROC_FOXES;
-
+            obj.type = 'F';
+            obj.GEN_PROC_FOXES = 0;
+            obj.GEN_FOOD_FOXES = 0;
         } else if (strcmp(type, "ROCK") == 0) {
-            object->type = '*';
-            board->map[x][y].object = object;
+            obj.type = '*';
         }
+        board[x][y] = obj;
     }
+}
+int inside_board(int x, int y) {
+    if (x < 0 || x >= R) return 0;
+    if (y < 0 || y >= C) return 0;
+    return 1;
 }
 
-int check_empty(BOARD* board, int x, int y) {
-    if (board->map[x][y].object->type == '.') {
-        return 1;
-    }
-    return 0;
-}
-int check_rabbit(BOARD* board, int x, int y) {
-    if (board->map[x][y].object->type == 'R') {
-        return 1;
-    }
+int empty_cell(int x, int y) {
+    if (inside_board(x, y) && board[x][y].type == '.') return 1;
+
     return 0;
 }
 /**
- * @brief Get the cell for the next move
+ * @brief Checks for conflicts between rabbits
  *
- * @param board
+ * @param rabbit new rabbit
+ * @param cur already at that pos
+ */
+void rabbit_conflict(object* rabbit, object cur) {
+    // has already a rabbit
+    if (rabbit->type == 'R') {
+        if (cur.GEN_PROC_RABBITS + 1 > rabbit->GEN_PROC_RABBITS) {
+            rabbit->GEN_PROC_RABBITS = cur.GEN_PROC_RABBITS + 1;
+        }
+    } else {
+        rabbit->type = cur.type;
+        rabbit->GEN_PROC_RABBITS = cur.GEN_PROC_RABBITS + 1;
+    }
+}
+/**
+ * @brief Checks if a rabbit can procriate. If it can, leave a new rabbit.
+ *
+ * @param cur current rabbit
  * @param x
  * @param y
- * @param f function to see if is empty(for rabbits) / there is a rabbit (for
- * foxes)
- * @return POS
  */
-POS get_cell(BOARD* board, int x, int y, int (*f)(BOARD*, int, int)) {
+void procriate_rabbit(object* cur, int x, int y) {
+    if (cur->GEN_PROC_RABBITS == GEN_PROC_RABBITS) {
+        object* new_rabbit = &board_aux[x][y];
+        new_rabbit->type = cur->type;
+        new_rabbit->GEN_PROC_RABBITS = 0;
+
+        /*if put at 0, the cur would procriate and
+        move and the gen_proc_rabbit would be 1 instead of 0
+        */
+        cur->GEN_PROC_RABBITS = -1;
+    }
+}
+
+/**
+ * @brief Move each rabbit
+ *
+ */
+void move_rabbit(int x, int y) {
+    object cur = board[x][y];
+    pos list_pos[4];
     int count = 0;
-    POS p[4];
-
-    // top left corner
-    if (x == 0 && y == 0) {
-        if ((*f)(board, x, y + 1) == 1) {
-            p[count].x = x;
-            p[count].y = y + 1;
-            count++;
-        }
-        if ((*f)(board, x + 1, y) == 1) {
-            p[count].x = x + 1;
-            p[count].y = y;
-            count++;
-        }
+    // North
+    if (empty_cell(x - 1, y) == 1) {
+        list_pos[count].x = x - 1;
+        list_pos[count].y = y;
+        count++;
     }
-    // top row
-    else if (x == 0 && y > 0 && y < board->C - 1) {
-        if ((*f)(board, x, y + 1) == 1) {
-            p[count].x = x;
-            p[count].y = y + 1;
-            count++;
-        }
-        if ((*f)(board, x + 1, y) == 1) {
-            p[count].x = x + 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x, y - 1) == 1) {
-            p[count].x = x;
-            p[count].y = y - 1;
-            count++;
-        }
+    // East
+    if (empty_cell(x, y + 1) == 1) {
+        list_pos[count].x = x;
+        list_pos[count].y = y + 1;
+        count++;
     }
-    // top right corner
-    else if (x == 0 && y == board->C - 1) {
-        if ((*f)(board, x + 1, y) == 1) {
-            p[count].x = x + 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x, y - 1) == 1) {
-            p[count].x = x;
-            p[count].y = y - 1;
-            count++;
-        }
+    // South
+    if (empty_cell(x + 1, y) == 1) {
+        list_pos[count].x = x + 1;
+        list_pos[count].y = y;
+        count++;
     }
 
-    // bottom left corner
-    else if (x == board->R - 1 && y == 0) {
-        if ((*f)(board, x - 1, y) == 1) {
-            p[count].x = x - 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x, y + 1) == 1) {
-            p[count].x = x;
-            p[count].y = y + 1;
-            count++;
-        }
+    // West
+    if (empty_cell(x, y - 1) == 1) {
+        list_pos[count].x = x;
+        list_pos[count].y = y - 1;
+        count++;
     }
 
-    // bottom row
-    else if (x == board->R - 1 && y > 0 && y < board->C - 1) {
-        if ((*f)(board, x - 1, y) == 1) {
-            p[count].x = x - 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x, y + 1) == 1) {
-            p[count].x = x;
-            p[count].y = y + 1;
-            count++;
-        }
-        if ((*f)(board, x, y - 1) == 1) {
-            p[count].x = x;
-            p[count].y = y - 1;
-            count++;
-        }
-    }
+    // didnt move
+    if (count == 0) {
+        list_pos[0].x = x;
+        list_pos[0].y = y;
+        count = 1;
 
-    // bottom right corner
-    else if (x == board->R - 1 && y == board->C - 1) {
-        if ((*f)(board, x - 1, y) == 1) {
-            p[count].x = x - 1;
-            p[count].y = y;
-            count++;
+        // if in the same place, dont procriate
+        if (cur.GEN_PROC_RABBITS == GEN_PROC_RABBITS) {
+            cur.GEN_PROC_RABBITS = GEN_PROC_RABBITS - 1;
         }
-        if ((*f)(board, x, y - 1) == 1) {
-            p[count].x = x;
-            p[count].y = y - 1;
-            count++;
-        }
+    } else {
+        // procriate?
+        procriate_rabbit(&cur, x, y);
     }
-    // left border
-    else if (x > 0 && x < board->R - 1 && y == 0) {
-        if ((*f)(board, x - 1, y) == 1) {
-            p[count].x = x - 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x, y + 1) == 1) {
-            p[count].x = x;
-            p[count].y = y + 1;
-            count++;
-        }
-        if ((*f)(board, x + 1, y) == 1) {
-            p[count].x = x + 1;
-            p[count].y = y;
-            count++;
-        }
+    pos pos = list_pos[(x + y + cur_gen) % count];
 
-    }
+    // move
+    object* rabbit = &board_aux[pos.x][pos.y];
 
-    // right border
-    else if (x > 0 && x < board->R - 1 && y == board->C - 1) {
-        if ((*f)(board, x - 1, y) == 1) {
-            p[count].x = x - 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x + 1, y) == 1) {
-            p[count].x = x + 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x, y - 1) == 1) {
-            p[count].x = x;
-            p[count].y = y - 1;
-            count++;
+    rabbit_conflict(rabbit, cur);
+}
+/**
+ * @brief Move all the rabbits
+ *
+ */
+void move_rabbits() {
+    int x, y;
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            if (board[x][y].type == 'R') {
+                move_rabbit(x, y);
+            }
         }
     }
-    // the rest
-    else {
-        if ((*f)(board, x - 1, y) == 1) {
-            p[count].x = x - 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x, y + 1) == 1) {
-            p[count].x = x;
-            p[count].y = y + 1;
-            count++;
-        }
-        if ((*f)(board, x + 1, y) == 1) {
-            p[count].x = x + 1;
-            p[count].y = y;
-            count++;
-        }
-        if ((*f)(board, x, y - 1) == 1) {
-            p[count].x = x;
-            p[count].y = y - 1;
-            count++;
-        }
+}
+void procriate_foxes(object* cur, int x, int y) {
+    if (cur->GEN_PROC_FOXES == GEN_PROC_FOXES) {
+        object* new_fox = &board_aux[x][y];
+        new_fox->type = cur->type;
+        new_fox->GEN_FOOD_FOXES = 0;
+        new_fox->GEN_PROC_FOXES = 0;
+        cur->GEN_PROC_FOXES = -1;
     }
+}
+void foxes_conflicts(object* fox, object cur) {
+    if (fox->type == 'F') {
+        if (cur.GEN_PROC_FOXES + 1 > fox->GEN_PROC_FOXES) {
+            fox->GEN_PROC_FOXES = cur.GEN_PROC_FOXES + 1;
 
-    // if can move
-    if (count != 0) {
-        return p[(board->generation + x + y) % count];
+            // if (fox->GEN_FOOD_FOXES != GEN_FOOD_FOXES) {
+            //     fox->GEN_FOOD_FOXES = cur.GEN_FOOD_FOXES - 1;
+            // }
+        } else if (cur.GEN_PROC_FOXES + 1 == fox->GEN_PROC_FOXES) {
+            if (cur.GEN_FOOD_FOXES + 1 < fox->GEN_FOOD_FOXES) {
+                fox->GEN_FOOD_FOXES = cur.GEN_FOOD_FOXES + 1;
+            }
+        }
+    } else {
+        if (fox->type == 'R') {
+            // ate a rabbit
+            fox->GEN_FOOD_FOXES = 0;
+        } else {
+            fox->GEN_FOOD_FOXES = cur.GEN_FOOD_FOXES + 1;
+        }
+        fox->GEN_PROC_FOXES = cur.GEN_PROC_FOXES + 1;
+        fox->type = 'F';
+    }
+}
+void move_fox(int x, int y) {
+    object cur = board[x][y];
+    pos list_pos[4];
+    int count = 0;
+
+    // North
+    if (inside_board(x - 1, y) && board[x - 1][y].type == 'R') {
+        list_pos[count].x = x - 1;
+        list_pos[count].y = y;
+        count++;
+    }
+    // East
+    if (inside_board(x, y + 1) && board[x][y + 1].type == 'R') {
+        list_pos[count].x = x;
+        list_pos[count].y = y + 1;
+        count++;
+    }
+    // South
+    if (inside_board(x + 1, y) && board[x + 1][y].type == 'R') {
+        list_pos[count].x = x + 1;
+        list_pos[count].y = y;
+        count++;
+    }
+    // West
+    if (inside_board(x, y - 1) && board[x][y - 1].type == 'R') {
+        list_pos[count].x = x;
+        list_pos[count].y = y - 1;
+        count++;
     }
 
     if (count == 0) {
-        POS er;
-        er.x = er.y = -1;
-        return er;
-    }
-}
+        // will starve
+        if (cur.GEN_FOOD_FOXES == GEN_FOOD_FOXES - 1) return;
 
-void resolve_conflit(BOARD* b, OBJECT* obj, int x, int y) {
-    if (obj->type == 'R') {
-        if (obj->GEN_PROC_RABBITS > b->map[x][y].object->GEN_PROC_RABBITS) {
-            b->map[x][y].object = obj;
+        // North
+        if (empty_cell(x - 1, y) == 1) {
+            list_pos[count].x = x - 1;
+            list_pos[count].y = y;
+            count++;
         }
-    } else if (obj->type == 'F') {
-        if (obj->GEN_PROC_FOXES >= b->map[x][y].object->GEN_PROC_FOXES) {
-            // if the same compare the food
+        // East
+        if (empty_cell(x, y + 1) == 1) {
+            list_pos[count].x = x;
+            list_pos[count].y = y + 1;
+            count++;
+        }
+        // South
+        if (empty_cell(x + 1, y) == 1) {
+            list_pos[count].x = x + 1;
+            list_pos[count].y = y;
+            count++;
+        }
 
-            if (obj->GEN_PROC_FOXES == b->map[x][y].object->GEN_PROC_FOXES) {
-                if (obj->GEN_FOOD_FOXES < b->map[x][y].object->GEN_FOOD_FOXES) {
-                    b->map[x][y].object = obj;
-                }
-            } else {
-                b->map[x][y].object = obj;
-            }
+        // West
+        if (empty_cell(x, y - 1) == 1) {
+            list_pos[count].x = x;
+            list_pos[count].y = y - 1;
+            count++;
         }
     }
-}
-void procriate(BOARD* board, BOARD* board_aux, OBJECT* obj, int x, int y) {
-    if (obj->type == 'R') {
-        // reset the rabbit gen_proc
-        obj->GEN_PROC_RABBITS = 0;
-
-        // create a new rabbit
-        OBJECT* new_rabbit = malloc(sizeof(OBJECT));
-        new_rabbit->type = 'R';
-
-        // move the old one and replace with the newer
-        board_aux->map[x][y].object = new_rabbit;
+    if (count == 0) {
+        list_pos[0].x = x;
+        list_pos[0].y = y;
+        count = 1;
+        if (cur.GEN_PROC_FOXES == GEN_PROC_FOXES) {
+            cur.GEN_PROC_FOXES = GEN_PROC_FOXES - 1;
+        }
     } else {
-        // reset the fox gen_proc
-        obj->GEN_PROC_FOXES = 0;
-
-        // create a new fox
-        OBJECT* new_fox = malloc(sizeof(OBJECT));
-        new_fox->type = 'F';
-
-        // move the old one and replace with the newer
-        board_aux->map[x][y].object = new_fox;
+        // procriate?
+        procriate_foxes(&cur, x, y);
     }
+
+    pos p = list_pos[(x + y + cur_gen) % count];
+
+    object* fox = &board_aux[p.x][p.y];
+
+    foxes_conflicts(fox, cur);
 }
-void move_foxes(BOARD* board, BOARD* board_aux) {
-    for (int i = 0; i < board->R; i++) {
-        for (int j = 0; j < board->C; j++) {
-            if (board->map[i][j].object->type == 'F') {
-                board->map[i][j].object->GEN_FOOD_FOXES++;
-                board->map[i][j].object->GEN_PROC_FOXES++;
 
-                POS p = get_cell(board, i, j, check_rabbit);
-
-                // if found a rabbit
-
-                if (p.x != -1) {
-                    if (board_aux->map[p.x][p.y].object->type == 'F') {
-                        resolve_conflit(board_aux,
-                                        board_aux->map[p.x][p.y].object, p.x,
-                                        p.y);
-                    } else {
-                        board->map[i][j].object->GEN_FOOD_FOXES = 0;
-
-                        board_aux->map[p.x][p.y].object =
-                            board->map[i][j].object;
-
-                        if (board->map[i][j].object->GEN_PROC_FOXES ==
-                            board->GEN_PROC_FOXES + 1) {
-                            procriate(board, board_aux,
-                                      board_aux->map[p.x][p.y].object, i, j);
-                        } else {
-                            OBJECT* empty = malloc(sizeof(OBJECT));
-                            empty->type = '.';
-                            board_aux->map[i][j].object = empty;
-                        }
-                    }
-                } else {
-                    // see if starved
-                    if (board->map[i][j].object->GEN_FOOD_FOXES ==
-                        board->GEN_FOOD_FOXES) {
-                        OBJECT* empty = malloc(sizeof(OBJECT));
-                        empty->type = '.';
-                        board_aux->map[i][j].object = empty;
-                    } else {
-                        p = get_cell(board, i, j, check_empty);
-                        if (board_aux->map[p.x][p.y].object->type == 'F') {
-                            resolve_conflit(board_aux,
-                                            board_aux->map[p.x][p.y].object,
-                                            p.x, p.y);
-                        } else {
-                            board_aux->map[p.x][p.y].object =
-                                board->map[i][j].object;
-
-                            if (board->map[i][j].object->GEN_PROC_FOXES ==
-                                board->GEN_PROC_FOXES + 1) {
-                                procriate(board, board_aux,
-                                          board_aux->map[p.x][p.y].object, i,
-                                          j);
-                            } else {
-                                OBJECT* empty = malloc(sizeof(OBJECT));
-                                empty->type = '.';
-                                board_aux->map[i][j].object = empty;
-                            }
-                        }
-                    }
-                }
+void move_foxes() {
+    int x, y;
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            if (board[x][y].type == 'F') {
+                move_fox(x, y);
             }
         }
     }
 }
 
-void move_rabbits(BOARD* board, BOARD* board_aux) {
-    for (int i = 0; i < board->R; i++) {
-        for (int j = 0; j < board->C; j++) {
-            if (board->map[i][j].object->type == 'R') {
-                board->map[i][j].object->GEN_PROC_RABBITS++;
-
-                POS p = get_cell(board, i, j, check_empty);
-
-                if (p.x != -1) {
-                    /* conflict */
-                    if (board_aux->map[p.x][p.y].object->type == 'R') {
-                        resolve_conflit(board_aux,
-                                        board_aux->map[p.x][p.y].object, p.x,
-                                        p.y);
-                    } else {
-                        board_aux->map[p.x][p.y].object =
-                            board->map[i][j].object;
-
-                        if (board->map[i][j].object->GEN_PROC_RABBITS ==
-                            board->GEN_PROC_RABBITS - 1) {
-                            procriate(board, board_aux,
-                                      board_aux->map[p.x][p.y].object, i, j);
-                        } else {
-                            OBJECT* empty = malloc(sizeof(OBJECT));
-                            empty->type = '.';
-                            board_aux->map[i][j].object = empty;
-                        }
-                    }
-                }
+void swap() {
+    object** aux;
+    aux = board;
+    board = board_aux;
+    board_aux = aux;
+}
+void copy_rabbits() {
+    int x, y;
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            if (board[x][y].type == 'R') {
+                board_aux[x][y] = board[x][y];
+            }
+        }
+    }
+}
+void copy_foxes() {
+    int x, y;
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            if (board[x][y].type == 'F') {
+                board_aux[x][y] = board[x][y];
+            }
+        }
+    }
+}
+void copy_rocks() {
+    int x, y;
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            if (board[x][y].type == '*') {
+                board_aux[x][y] = board[x][y];
             }
         }
     }
 }
 
+void reset_aux() {
+    int x, y;
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            if (board_aux[x][y].type != '*') {
+                board_aux[x][y].type = '.';
+                board_aux[x][y].GEN_FOOD_FOXES = 0;
+                board_aux[x][y].GEN_PROC_FOXES = 0;
+                board_aux[x][y].GEN_PROC_RABBITS = 0;
+            }
+        }
+    }
+}
 int main() {
-    int GEN_PROC_RABBITS, GEN_PROC_FOXES, GEN_FOOD_FOXES, N_GEN, R, C, N;
     scanf("%d %d %d %d %d %d %d ", &GEN_PROC_RABBITS, &GEN_PROC_FOXES,
           &GEN_FOOD_FOXES, &N_GEN, &R, &C, &N);
+
+    int nthreads = 1;
+    omp_set_num_threads(nthreads);
 
     /*
         make the 2 boards
     */
-    BOARD* board = (BOARD*)malloc(sizeof(BOARD));
-    BOARD* aux = (BOARD*)malloc(sizeof(BOARD));
-
-    board->map = (CELL**)malloc(sizeof(CELL*) * R);
-    aux->map = (CELL**)malloc(sizeof(CELL*) * R);
+    board = malloc(sizeof(object*) * R);
+    board_aux = malloc(sizeof(object*) * R);
 
     for (int i = 0; i < R; i++) {
-        board->map[i] = (CELL*)malloc(sizeof(CELL) * C);
-        aux->map[i] = (CELL*)malloc(sizeof(CELL) * C);
+        board[i] = (object*)malloc(sizeof(object) * C);
+        board_aux[i] = (object*)malloc(sizeof(object) * C);
     }
-    board->C = aux->C = C;
-    board->R = aux->R = R;
 
-    empty_board(board);
-    recieve_input(board, N, GEN_PROC_FOXES, GEN_FOOD_FOXES, GEN_PROC_FOXES);
-    for (int i = 0; i < N_GEN; i++) {
-        copy_board(aux, board);
-        move_rabbits(board, aux);
-        copy_board(board, aux);
-        move_foxes(board, aux);
-        copy_board(board, aux);
-        // print_board(board);
+    start_board();
+    recieve_objects();
 
-        board->generation++;
+    // copy the rocks to the board_aux
+    copy_rocks();
+
+    double start = omp_get_wtime();
+
+    for (cur_gen = 0; cur_gen < N_GEN; cur_gen++) {
+        copy_foxes();
+        move_rabbits();
+        swap();
+        reset_aux();
+        copy_rabbits();
+        move_foxes();
+        swap();
+        reset_aux();
+        // print_board();
     }
-    printf("--------------------------------------------------\n");
-    for (int i = 0; i < board->R; i++) {
-        for (int j = 0; j < board->C; j++) {
-            if (board->map[i][j].object->type == '*') {
-                printf("ROCK %d %d\n", i, j);
-            } else if (board->map[i][j].object->type == 'R') {
-                printf("RABBIT %d %d\n", i, j);
+    double final = omp_get_wtime();
 
-            } else if (board->map[i][j].object->type == 'F') {
-                printf("FOX %d %d\n", i, j);
-            }
+    int x, y;
+    // printf("-----------------\n");
+    for (x = 0; x < R; x++) {
+        for (y = 0; y < C; y++) {
+            if (board[x][y].type == 'R')
+                printf("RABBIT ");
+            else if (board[x][y].type == 'F')
+                printf("FOX ");
+            else if (board[x][y].type == '*')
+                printf("ROCK ");
+            else
+                continue;
+            printf("%d %d\n", x, y);
         }
     }
+
+    // printf("Execution time: %lf\n", (final - start) * 1000);
     return 0;
 }

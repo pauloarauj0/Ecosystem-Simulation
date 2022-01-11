@@ -1,2 +1,2 @@
 compile: compile
-	gcc ecosystem.c -o ecosystem
+	gcc -fopenmp ecosystem.c -o ecosystem
