@@ -202,9 +202,6 @@ void foxes_conflicts(object* fox, object cur) {
         if (cur.GEN_PROC_FOXES + 1 > fox->GEN_PROC_FOXES) {
             fox->GEN_PROC_FOXES = cur.GEN_PROC_FOXES + 1;
 
-            // if (fox->GEN_FOOD_FOXES != GEN_FOOD_FOXES) {
-            //     fox->GEN_FOOD_FOXES = cur.GEN_FOOD_FOXES - 1;
-            // }
         } else if (cur.GEN_PROC_FOXES + 1 == fox->GEN_PROC_FOXES) {
             if (cur.GEN_FOOD_FOXES + 1 < fox->GEN_FOOD_FOXES) {
                 fox->GEN_FOOD_FOXES = cur.GEN_FOOD_FOXES + 1;
