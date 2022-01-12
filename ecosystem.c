@@ -11,6 +11,7 @@ int cur_gen;
 
 object** board;
 object** board_aux;
+omp_lock_t* lock;
 /* ---------------- */
 
 /**
@@ -19,6 +20,7 @@ object** board_aux;
  */
 void start_board() {
     int x, y;
+#pragma omp parallel for private(x, y)
     for (x = 0; x < R; x++) {
         for (y = 0; y < C; y++) {
             object empty;
@@ -168,11 +170,14 @@ void move_rabbit(int x, int y) {
         procriate_rabbit(&cur, x, y);
     }
     pos pos = list_pos[(x + y + cur_gen) % count];
+    omp_set_lock(&lock[pos.x]);
 
     // move
     object* rabbit = &board_aux[pos.x][pos.y];
 
     rabbit_conflict(rabbit, cur);
+
+    omp_unset_lock(&lock[pos.x]);
 }
 /**
  * @brief Move all the rabbits
@@ -180,6 +185,7 @@ void move_rabbit(int x, int y) {
  */
 void move_rabbits() {
     int x, y;
+#pragma omp parallel for private(x, y)
     for (x = 0; x < R; x++) {
         for (y = 0; y < C; y++) {
             if (board[x][y].type == 'R') {
@@ -291,14 +297,16 @@ void move_fox(int x, int y) {
     }
 
     pos p = list_pos[(x + y + cur_gen) % count];
-
+    omp_set_lock(&lock[p.x]);
     object* fox = &board_aux[p.x][p.y];
 
     foxes_conflicts(fox, cur);
+    omp_unset_lock(&lock[p.x]);
 }
 
 void move_foxes() {
     int x, y;
+#pragma omp parallel for private(x, y)
     for (x = 0; x < R; x++) {
         for (y = 0; y < C; y++) {
             if (board[x][y].type == 'F') {
@@ -316,6 +324,7 @@ void swap() {
 }
 void copy_rabbits() {
     int x, y;
+#pragma omp parallel for private(x, y)
     for (x = 0; x < R; x++) {
         for (y = 0; y < C; y++) {
             if (board[x][y].type == 'R') {
@@ -326,6 +335,7 @@ void copy_rabbits() {
 }
 void copy_foxes() {
     int x, y;
+#pragma omp parallel for private(x, y)
     for (x = 0; x < R; x++) {
         for (y = 0; y < C; y++) {
             if (board[x][y].type == 'F') {
@@ -336,6 +346,7 @@ void copy_foxes() {
 }
 void copy_rocks() {
     int x, y;
+#pragma omp parallel for private(x, y)
     for (x = 0; x < R; x++) {
         for (y = 0; y < C; y++) {
             if (board[x][y].type == '*') {
@@ -347,6 +358,7 @@ void copy_rocks() {
 
 void reset_aux() {
     int x, y;
+#pragma omp parallel for private(x, y)
     for (x = 0; x < R; x++) {
         for (y = 0; y < C; y++) {
             if (board_aux[x][y].type != '*') {
@@ -362,7 +374,7 @@ int main() {
     scanf("%d %d %d %d %d %d %d ", &GEN_PROC_RABBITS, &GEN_PROC_FOXES,
           &GEN_FOOD_FOXES, &N_GEN, &R, &C, &N);
 
-    int nthreads = 1;
+    int nthreads = 2;
     omp_set_num_threads(nthreads);
 
     /*
@@ -384,6 +396,10 @@ int main() {
 
     double start = omp_get_wtime();
 
+    lock = (omp_lock_t*)malloc(sizeof(omp_lock_t) * R);
+    for (int i = 0; i < R; i++) {
+        omp_init_lock(&lock[i]);
+    }
     for (cur_gen = 0; cur_gen < N_GEN; cur_gen++) {
         copy_foxes();
         move_rabbits();
@@ -397,10 +413,9 @@ int main() {
     }
     double final = omp_get_wtime();
 
-    int x, y;
-    // printf("-----------------\n");
-    for (x = 0; x < R; x++) {
-        for (y = 0; y < C; y++) {
+    // output
+    for (int x = 0; x < R; x++) {
+        for (int y = 0; y < C; y++) {
             if (board[x][y].type == 'R')
                 printf("RABBIT ");
             else if (board[x][y].type == 'F')
@@ -412,7 +427,9 @@ int main() {
             printf("%d %d\n", x, y);
         }
     }
-
-    // printf("Execution time: %lf\n", (final - start) * 1000);
+    for (int i = 0; i < R; i++) {
+        omp_destroy_lock(&lock[i]);
+    }
+    printf("Execution time: %lf\n", (final - start));
     return 0;
 }
