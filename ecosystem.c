@@ -417,14 +417,11 @@ int main() {
     for (int x = 0; x < R; x++) {
         for (int y = 0; y < C; y++) {
             if (board[x][y].type == 'R')
-                printf("RABBIT ");
+                printf("RABBIT %d %d\n", x, y);
             else if (board[x][y].type == 'F')
-                printf("FOX ");
+                printf("FOX %d %d\n", x, y);
             else if (board[x][y].type == '*')
-                printf("ROCK ");
-            else
-                continue;
-            printf("%d %d\n", x, y);
+                printf("ROCK %d %d\n", x, y);
         }
     }
     for (int i = 0; i < R; i++) {
